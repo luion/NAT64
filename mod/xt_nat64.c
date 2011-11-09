@@ -111,7 +111,7 @@ static int nat64_get_l3struct(u_int8_t l3protocol,
 	}
 }
 
-/*
+/* FIXME: EXPLAIN IT IN A CLEARER WAY. SAY THE PURPOSE WITH REAL WORDS. 
  * IPv6 comparison function. It's used as a call from nat64_tg6 to compare
  * the incoming packet's IP with the rule's IP; therefore, when the module is 
  * in debugging mode it prints the rule's IP.
@@ -366,9 +366,6 @@ static struct sk_buff * nat64_get_skb(u_int8_t l3protocol, u_int8_t l4protocol,
 
 	u_int8_t pay_len = skb->data_len;
 	u_int8_t packet_len, l4hdrlen, l3hdrlen;
-	unsigned int addr_type;
-
-	addr_type = RTN_LOCAL;
  
 	pr_debug("NAT64: get_skb paylen = %u", pay_len);
 
@@ -584,7 +581,9 @@ static bool nat64_determine_tuple(u_int8_t l3protocol, u_int8_t l4protocol,
 	}
 
 	pr_debug("NAT64: Determining the tuple stage went OK.");
+	return true;
 
+/*
 	if (nat64_update_n_filter(l3protocol, l4protocol, skb, &inner)) {
 		return true;
 	} else {
@@ -592,6 +591,8 @@ static bool nat64_determine_tuple(u_int8_t l3protocol, u_int8_t l4protocol,
 				"Filtering stage.");
 		return false;
 	}
+*/
+
 }
 
 /*
@@ -622,11 +623,11 @@ static unsigned int nat64_tg6(struct sk_buff *skb,
 	struct ipv6hdr *iph = ipv6_hdr(skb);
 	__u8 l4_protocol = iph->nexthdr;
 
-	pr_debug("\n* INCOMING IPV6 PACKET *\n");
-	pr_debug("PKT SRC=%pI6 \n", &iph->saddr);
-	pr_debug("PKT DST=%pI6 \n", &iph->daddr);
-	pr_debug("RULE DST=%pI6 \n", &info->ip6dst.in6);
-	pr_debug("RULE DST_MSK=%pI6 \n", &info->ip6dst_mask);
+	pr_debug("\n*NAT64: INCOMING IPV6 PACKET *\n");
+	pr_debug("NAT64: PKT SRC=%pI6 \n", &iph->saddr);
+	pr_debug("NAT64: PKT DST=%pI6 \n", &iph->daddr);
+	pr_debug("NAT64: RULE DST=%pI6 \n", &info->ip6dst.in6);
+	pr_debug("NAT64: RULE DST_MSK=%pI6 \n", &info->ip6dst_mask);
 
 	/*
 	 * If the packet is not directed towards the NAT64 prefix, 
