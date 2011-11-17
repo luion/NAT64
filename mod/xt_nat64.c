@@ -290,7 +290,6 @@ static void nat64_netdev_uninit(void)
 
 static void nat64_output_ipv4(struct sk_buff *skb)
 {
-	int ret;
 	struct iphdr *iph = ip_hdr(skb);
 	struct flowi fl;
 	struct rtable *rt;
@@ -330,7 +329,8 @@ static int nat64_send_ipv4_packet(struct sk_buff * skb)
 	 * Get the routing table in order to get the outgoing device and outgoing
 	 * address
 	 */
-	rt = ip_route_output(&init_net, iph->daddr, iph->saddr, RT_TOS(iph->tos), 0);
+	rt = 0;
+//	rt = ip_route_output(&init_net, iph->daddr, iph->saddr, RT_TOS(iph->tos), 0);
 
 	if (!rt || IS_ERR(rt)) {
 		pr_info("NAT64: NAT64: nat64_send_packet - rt is null or an error");
@@ -429,7 +429,7 @@ static int nat64_send_packet(struct sk_buff * old_skb, struct sk_buff *skb,
 			pr_debug("NAT64: eth type ipv6 to ipv4");
 			skb->protocol = ETH_P_IP;
 			ret = nat64_send_ipv4_packet(skb);
-			//nat64_output_ipv4(new_skb);
+			nat64_output_ipv4(skb);
 			break;
 		case ETH_P_IP:
 			pr_debug("NAT64: eth type ipv4 to ipv6");
@@ -740,10 +740,11 @@ static struct sk_buff * nat64_get_skb(u_int8_t l3protocol, u_int8_t l4protocol,
 		default:
 			return NULL;
 	}
-	pr_debug("NAT64: LL_MAX_HEADER [%d] | PACKET_LEN [%d] = l3hdrlen [%d] + l4hdrlen [%d] + pay_len [%d]", LL_MAX_HEADER, packet_len, l3hdrlen, l4hdrlen, pay_len);
 
 	l2hdrlen = LL_MAX_HEADER;
 	packet_len = l3hdrlen + l4hdrlen + pay_len;
+
+	pr_debug("NAT64: LL_MAX_HEADER [%d] | PACKET_LEN [%d] = l3hdrlen [%d] + l4hdrlen [%d] + pay_len [%d]", LL_MAX_HEADER, packet_len, l3hdrlen, l4hdrlen, pay_len);
 
 	/*
 	 * LL_MAX_HEADER referes to the 'link layer' in the OSI stack.
@@ -899,10 +900,9 @@ static bool nat64_update_n_filter(u_int8_t l3protocol, u_int8_t l4protocol,
  * Function that gets the packet's information and returns a tuple out of it.
  */
 static bool nat64_determine_tuple(u_int8_t l3protocol, u_int8_t l4protocol, 
-		struct sk_buff *skb, struct nf_conntrack_tuple * inner, 
-		struct net_device * net_out)
+		struct sk_buff *skb, struct nf_conntrack_tuple * inner)
 {
-	if (!(nat64_get_tuple(l3protocol, l4protocol, skb, &inner))) {
+	if (!(nat64_get_tuple(l3protocol, l4protocol, skb, inner))) {
 		pr_debug("NAT64: Something went wrong getting the tuple");
 		return false;
 	}
@@ -945,7 +945,9 @@ static unsigned int nat64_tg4(struct sk_buff *skb,
  */
 static unsigned int nat64_ipv6_core(struct sk_buff *skb, 
 		const struct xt_action_param *par, u_int8_t l3protocol,
-		u_int8_t l4protocol) {
+		u_int8_t l4protocol,
+		struct net_device * net_out) 
+	{
 		
 	bool nf_ret = true;
 	struct nf_conntrack_tuple inner;
@@ -961,7 +963,7 @@ static unsigned int nat64_ipv6_core(struct sk_buff *skb,
 
 	if(nf_ret) {
 		nf_ret = nat64_determine_outgoing_tuple(l3protocol, l4protocol, 
-			skb, &inner, &new_skb, &outgoing);
+			skb, &inner, &new_skb, &outgoing, net_out);
 	}
 	
 	if(nf_ret) {
@@ -971,9 +973,12 @@ static unsigned int nat64_ipv6_core(struct sk_buff *skb,
 	
 	/* TODO: Incluir llamada a HAIRPINNING aqui */
 	
-	if(new_skb)
-		kfree_skb(new_skb);
-	
+	if(nf_ret) {
+		// SEND
+		nat64_send_packet(skb, &new_skb, net_out);
+		kfree_skb(&new_skb);
+	}
+		
 	return NF_DROP;
 }
 
@@ -1018,7 +1023,7 @@ static unsigned int nat64_tg6(struct sk_buff *skb,
 
 	if (l4_protocol & NAT64_IPV6_ALLWD_PROTOS) {
 		// CORE of NAT64 for TG6
-		return nat64_ipv6_core(skb, par, NFPROTO_IPV6, l4_protocol);
+		return nat64_ipv6_core(skb, par, NFPROTO_IPV6, l4_protocol, net_out);
 	}
 
 	/*
