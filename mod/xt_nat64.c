@@ -748,170 +748,70 @@ static bool nat64_update_n_filter(u_int8_t l3protocol, u_int8_t l4protocol,
 
 	struct nat64_bib_entry *bib_entry;
 	struct nat64_st_entry *st_entry;
-	struct nat64_ipv4_ta *ipv4_pool_ta;
+	//struct nat64_ipv4_ta *ipv4_pool_ta;
 	struct nat64_ipv6_ta *ipv6_ta;
 	bool res;
-	
-	res = false;
-	if (l3protocol == NFPROTO_IPV4) {
-		if (inner->dst.protonum == NFPROTO_IPV4) {
-			/*
-			* Dropping packet
-			*/
-			return res;
-		} else if (inner->dst.protonum == NFPROTO_IPV6) {
-			// if the dst address is IPv6, query the STs for any records
-			// if there's no active session for the specified connection,
-			// the packet should be dropped
-			switch (l4protocol) {
-				case IPPROTO_TCP:
-					//Query TCP ST
-					pr_debug("NAT64: TCP protocol not currently supported.");
-				break;
-				case IPPROTO_UDP:
-					//Query UDP ST
-					if (true) {
-						//continue processing...
-						//FIXME
-					} else {
-						pr_debug("NAT64: no currently active session; packet dropped.");
-                    			}
-				break;
-				case IPPROTO_ICMP:
-					//Query ICMP ST
-					pr_debug("NAT64: ICMP protocol not currently supported.");
-				break;
-				case IPPROTO_ICMPV6:
-					//Query ICMPV6 ST
-					pr_debug("NAT64: ICMPv6 protocol not currently supported.");
-				break;
-				default:
-					//Drop packet
-					pr_debug("NAT64: layer 4 protocol not currently supported.");
-					break;
-				}
-		}
-	} else if (l3protocol == NFPROTO_IPV6) {
-		if (inner->dst.protonum == NFPROTO_IPV6) {
-			/*
-			*	Testing...
-			*/
-			//FIXME: DROP? ACCEPT? This is hairpinning.
-			return res;
-	        } else if (inner->dst.protonum == NFPROTO_IPV4) {
-			switch (l4protocol) {
-				case IPPROTO_TCP:
-					/*
-					* Verify if there's any binding for the src address by querying
-					* the TCP BIB. If there's a binding, verify if there's a
-					* connection to the specified destination by querying the TCP ST.
-					* 
-					* In case any of these records are missing, they should be created.
-					*/
-					pr_debug("NAT64: TCP protocol not currently supported.");
-				break;
-				case IPPROTO_UDP:
-					/*
-					* Verify if there's any binding for the src address by querying
-					* the UDP BIB. If there's a binding, verify if there's a
-					* connection to the specified destination by querying the UDP ST.
-					* 
-					* In case these records are missing, they should be created.
-					*/
-//	FIXME: CLOCKS no hay		currentTime = (int) clock() / CLOCKS_PER_SECOND;
-					if (currentTime - previousTime > udp_period) {
-						nat64_st_delete(udp_st, udp_default, currentTime);
-						//Deletes any record whose "lifetime" has exceeded "udp_default"
-						previousTime = currentTime;
-					}
-					//Querying the UDP BIB
-					bib_entry = nat64_bib_select(udp_bib, &(inner->src.u3.in6),
-					inner->src.u.udp.port);
+	struct in_addr * ip4srcaddr;
+	uint16_t new_port = htons(60000);
+	int ret = 0;
+	ip4srcaddr = kmalloc(sizeof(struct in_addr *), GFP_KERNEL);
+	ret = in4_pton("192.168.56.3", -1, (__u8*)&(ip4srcaddr->s_addr),
+			'\x0', NULL);
 
-					if (bib_entry == NULL) {
-						//Allocate memory
-						ipv6_ta = (struct nat64_ipv6_ta *)
-						kmalloc(sizeof(struct nat64_ipv6_ta), GFP_KERNEL);
-						if (ipv6_ta != NULL) {
-							//Initialize IPv6 t.a. structure
-							nat64_initialize_ipv6_ta(ipv6_ta, &(inner->src.u3.in6), inner->src.u.udp.port);
-							//Verify if there's an address available in the IPv4 pool
-							ipv4_pool_ta = nat64_ipv4_pool_address_available(ipv6_ta);	
-							if (ipv4_pool_ta != NULL) {
-								//Allocate memory for BIB entry
-								bib_entry = (struct nat64_bib_entry *) kmalloc(sizeof(struct nat64_bib_entry), GFP_KERNEL);
-								//Allocate memory for ST entry
-								st_entry = (struct nat64_st_entry *) kmalloc(sizeof(struct nat64_st_entry), GFP_KERNEL);
-								if (bib_entry != NULL && st_entry != NULL) {
-									//Initialize BIB entry
-									nat64_initialize_bib_entry(bib_entry, 
-										&(inner->src.u3.in6), 
-										inner->src.u.udp.port, 
-										&(ipv4_pool_ta->ip4a), 
-										ipv4_pool_ta->port);
-									//Insert entry into UDP BIB
-									nat64_bib_insert(udp_bib, bib_entry);
-									//Initialize ST entry
-									nat64_initialize_st_entry(st_entry,
-										&(inner->src.u3.in6), inner->src.u.udp.port,
-										&(inner->dst.u3.in6), inner->dst.u.udp.port,
-										&(ipv4_pool_ta->ip4a), ipv4_pool_ta->port,
-										&(inner->dst.u3.in), inner->dst.u.udp.port,
-										currentTime);
-										//Insert entry into UDP ST
-										nat64_st_insert(udp_st, st_entry);
-									res = true;
-								} else {
-									//FIXME: bib_entry = NULL;
-									//FIXME: st_entry = NULL;
-									kfree(bib_entry);
-									kfree(st_entry);
-								}
-							}
-						}
-					} else {
-						//Querying the UDP ST
-						st_entry = nat64_st_select(udp_st, &(bib_entry->ta_4.ip4a),
-							bib_entry->ta_4.port, &(inner->dst.u3.in), inner->dst.u.udp.port);
-						if (st_entry != NULL) {
-							nat64_st_update(udp_st, &(bib_entry->ta_4.ip4a),
-							bib_entry->ta_4.port, &(inner->dst.u3.in),
-							inner->dst.u.udp.port, currentTime);
-							res = true;
-						} else {
-							//Allocate memory for ST entry
-							st_entry = (struct nat64_st_entry *) kmalloc(sizeof(struct nat64_st_entry), GFP_KERNEL);
-							if (st_entry != NULL) {
-								//Initialize ST entry
-								nat64_initialize_st_entry(st_entry,
-									&(inner->src.u3.in6), inner->src.u.udp.port,
-									&(inner->dst.u3.in6), inner->dst.u.udp.port,
-									&(ipv4_pool_ta->ip4a), ipv4_pool_ta->port,
-									&(inner->dst.u3.in), inner->dst.u.udp.port,
-									currentTime);
-								//Insert entry into UDP ST
-								nat64_st_insert(udp_st, st_entry);
-								res = true;
-							}
-						}
-					}
-				break;
-				case IPPROTO_ICMP:
-					//Query ICMP ST
-					pr_debug("NAT64: ICMP protocol not currently supported.");
-				break;
-				case IPPROTO_ICMPV6:
-					//Query ICMPV6 ST
-					pr_debug("NAT64: ICMPv6 protocol not currently supported.");
-				break;
-				default:
-					//Drop packet
-					pr_debug("NAT64: layer 4 protocol not currently supported.");
-				break;
+	res = true;
+	if (l3protocol == NFPROTO_IPV4) {
+		pr_debug("NAT64: FNU - IPV4");
+		/*
+		 * Query the STs for any records
+		 * If there's no active session for the specified 
+		 * connection, the packet should be dropped
+		 */
+		switch (l4protocol) {
+			case IPPROTO_TCP:
+				//Query TCP ST
+				pr_debug("NAT64: TCP protocol not currently supported.");
+			break;
+			case IPPROTO_UDP:
+				//Query UDP ST
+				if (true) {
+					//continue processing...
+					//FIXME: FIND the session and check if the lifetime is up. If it is, keep processing.
+					res = true; 
+					goto end;
+				} else {
+					pr_debug("NAT64: no currently active session found; packet should be dropped.");
+					res = false; 
+					goto end;
 			}
+			break;
+			case IPPROTO_ICMP:
+				//Query ICMP ST
+				pr_debug("NAT64: ICMP protocol not currently supported.");
+			break;
+			case IPPROTO_ICMPV6:
+				//Query ICMPV6 ST
+				pr_debug("NAT64: ICMPv6 protocol not currently supported.");
+			break;
+			default:
+				//Drop packet
+				pr_debug("NAT64: layer 4 protocol not currently supported.");
+				break;
 		}
+		res = false; 
+		goto end;
+	} else if (l3protocol == NFPROTO_IPV6) {
+		pr_debug("NAT64: FNU - IPV6");	
+		// FIXME: Return true if it is not H&H. A special return code 
+		// will have to be added as a param in the future to handle it.
+		res = true;
+		goto end;
 	}
-	pr_debug("NAT64: Updating and Filtering stage went OK.");
+end: 
+	kfree(ip4srcaddr);
+	if(res) 
+		pr_debug("NAT64: Updating and Filtering stage went OK.");
+	else 
+		pr_debug("NAT64: Updating and Filtering stage FAILED.");
 	return res;
 }
 
@@ -965,8 +865,8 @@ static unsigned int nat64_ipv6_core(struct sk_buff *skb,
 	nf_ret = nat64_determine_tuple(l3protocol, l4protocol, skb, &inner);
 
 	if(nf_ret) {
-//		nf_ret = nat64_update_n_filter(l3protocol, l4protocol, 
-//			skb, &inner);
+		nf_ret = nat64_update_n_filter(l3protocol, l4protocol, 
+			skb, &inner);
 	}
 
 	if(nf_ret) {
@@ -1085,6 +985,20 @@ static int __init nat64_init(void)
 	l3proto_ip = nf_ct_l3proto_find_get((u_int16_t)NFPROTO_IPV4);
 	l3proto_ipv6 = nf_ct_l3proto_find_get((u_int16_t) NFPROTO_IPV6);
 
+	udp_bib = kmalloc(sizeof(struct nat64_bib *), GFP_KERNEL);
+	udp_st = kmalloc(sizeof(struct nat64_st *), GFP_KERNEL);
+
+	if(!udp_bib) {
+		pr_debug("UDP BIB null");
+	} else {
+		pr_debug("UDP BIB no null");
+	}
+	if(!udp_st) {
+		pr_debug("UDP ST null");
+	} else {
+		pr_debug("UDP ST no null");
+	}
+	
 	if (l3proto_ip == NULL)
 		pr_debug("NAT64: couldn't load IPv4 l3proto");
 	if (l3proto_ipv6 == NULL)
@@ -1097,6 +1011,8 @@ static void __exit nat64_exit(void)
 {
 	nf_ct_l3proto_put(l3proto_ip);
 	nf_ct_l3proto_put(l3proto_ipv6);
+	kfree(udp_bib);
+	kfree(udp_st);
 	xt_unregister_target(&nat64_tg_reg);
 }
 
