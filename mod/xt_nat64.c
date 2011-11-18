@@ -619,8 +619,8 @@ static struct sk_buff * nat64_get_skb(u_int8_t l3protocol, u_int8_t l4protocol,
 	skb_set_transport_header(new_skb, l3hdrlen);
 	skb_put(new_skb, packet_len);
 
-	pr_debug("LL_MAX_HEADER [%d] | PACKET_LEN [%d] = l3hdrlen [%d] + l4hdrlen [%d] + pay_len [%d]", LL_MAX_HEADER, packet_len, l3hdrlen, l4hdrlen, pay_len);
-	pr_debug("SKB_ALLOC [head %ld] [data %ld] [tail %d] [end %d] | [len %d]", new_skb->head - new_skb->head, new_skb->data - new_skb->head, new_skb->tail, new_skb->end, new_skb->len);
+//	pr_debug("LL_MAX_HEADER [%d] | PACKET_LEN [%d] = l3hdrlen [%d] + l4hdrlen [%d] + pay_len [%d]", LL_MAX_HEADER, packet_len, l3hdrlen, l4hdrlen, pay_len);
+//	pr_debug("SKB_ALLOC [head %ld] [data %ld] [tail %d] [end %d] | [len %d]", new_skb->head - new_skb->head, new_skb->data - new_skb->head, new_skb->tail, new_skb->end, new_skb->len);
 	
 	if (!new_skb) {
 		if (printk_ratelimit()) {
@@ -639,7 +639,7 @@ static struct sk_buff * nat64_get_skb(u_int8_t l3protocol, u_int8_t l4protocol,
 					 (l4hdrlen + pay_len))) { 
 			pr_debug("NAT64: Everything went OK populating the "
 				 "new sk_buff");
-			pr_debug("POPULATED SKB [head %ld] [data %ld] [tail %d] [end %d] | [len %d]", new_skb->head - new_skb->head, new_skb->data - new_skb->head, new_skb->tail, new_skb->end, new_skb->len);
+//			pr_debug("POPULATED SKB [head %ld] [data %ld] [tail %d] [end %d] | [len %d]", new_skb->head - new_skb->head, new_skb->data - new_skb->head, new_skb->tail, new_skb->end, new_skb->len);
 			nat64_send_packet(skb, new_skb);
 			return new_skb;
 		} else {
@@ -751,13 +751,15 @@ static bool nat64_update_n_filter(u_int8_t l3protocol, u_int8_t l4protocol,
 	//struct nat64_ipv4_ta *ipv4_pool_ta;
 	struct nat64_ipv6_ta *ipv6_ta;
 	bool res;
+	bool found_bib_entry;
+
 	struct in_addr * ip4srcaddr;
 	uint16_t new_port = htons(60000);
-	int ret = 0;
+	bib_entry = kmalloc(sizeof(struct nat64_bib_entry *), GFP_KERNEL);
 	ip4srcaddr = kmalloc(sizeof(struct in_addr *), GFP_KERNEL);
-	ret = in4_pton("192.168.56.3", -1, (__u8*)&(ip4srcaddr->s_addr),
-			'\x0', NULL);
+	in4_pton("192.168.56.3", -1, (__u8*)&(ip4srcaddr->s_addr), '\x0', NULL);
 
+	found_bib_entry = false;
 	res = true;
 	if (l3protocol == NFPROTO_IPV4) {
 		pr_debug("NAT64: FNU - IPV4");
@@ -824,9 +826,49 @@ static bool nat64_update_n_filter(u_int8_t l3protocol, u_int8_t l4protocol,
 				* 
 				* In case these records are missing, they should be created.
 				*/
-				bib_entry = nat64_bib_select(udp_bib, &(inner->src.u3.in6), inner->src.u.udp.port);
-				if (bib_entry == NULL) {
+				found_bib_entry = nat64_bib_select(udp_bib, &(inner->src.u3.in6), inner->src.u.udp.port, bib_entry);
+				if (!found_bib_entry) {
 					pr_debug("FIRST O");
+					//Allocate memory
+					ipv6_ta = (struct nat64_ipv6_ta *) kmalloc(sizeof(struct nat64_ipv6_ta), GFP_KERNEL);
+					if (ipv6_ta != NULL) {
+						//Initialize IPv6 t.a. structure
+						nat64_initialize_ipv6_ta(ipv6_ta, &(inner->src.u3.in6), inner->src.u.udp.port);
+						//Verify if there's an address available in the IPv4 pool
+						//ipv4_pool_ta = nat64_ipv4_pool_address_available(ipv6_ta);
+						//if (ipv4_pool_ta != NULL) {
+							//Allocate memory for BIB entry
+							bib_entry = (struct nat64_bib_entry *) kmalloc(sizeof(struct nat64_bib_entry), GFP_KERNEL);
+							//Allocate memory for ST entry
+							st_entry = (struct nat64_st_entry *) kmalloc(sizeof(struct nat64_st_entry), GFP_KERNEL);
+							if (bib_entry != NULL && st_entry != NULL) {
+								//Initialize BIB entry
+								nat64_initialize_bib_entry(bib_entry, 
+									&(inner->src.u3.in6), 
+									inner->src.u.udp.port, 
+									ip4srcaddr, //&(ipv4_pool_ta->ip4a), 
+									new_port);//ipv4_pool_ta->port);
+								//Insert entry into UDP BIB
+								nat64_bib_insert(udp_bib, bib_entry);
+								//Initialize ST entry
+								nat64_initialize_st_entry(st_entry,
+									&(inner->src.u3.in6), inner->src.u.udp.port,
+									&(inner->dst.u3.in6), inner->dst.u.udp.port,
+									ip4srcaddr, new_port, //&(ipv4_pool_ta->ip4a), ipv4_pool_ta->port,
+									&(inner->dst.u3.in), inner->dst.u.udp.port,
+									currentTime);
+									//Insert entry into UDP ST
+									nat64_st_insert(udp_st, st_entry);
+									res = true;
+									goto end;
+							} else {
+								//FIXME: bib_entry = NULL;
+								//FIXME: st_entry = NULL;
+								kfree(bib_entry);
+								kfree(st_entry);
+							}
+						//}
+					}
 				} else {
 					pr_debug("SECOND O");
 				}
@@ -1028,19 +1070,14 @@ static int __init nat64_init(void)
 	l3proto_ip = nf_ct_l3proto_find_get((u_int16_t)NFPROTO_IPV4);
 	l3proto_ipv6 = nf_ct_l3proto_find_get((u_int16_t) NFPROTO_IPV6);
 
-	udp_bib = kmalloc(sizeof(struct nat64_bib *), GFP_KERNEL);
-	udp_st = kmalloc(sizeof(struct nat64_st *), GFP_KERNEL);
+	/* INIT ST & BIB */
 
-	if(!udp_bib) {
-		pr_debug("UDP BIB null");
-	} else {
-		pr_debug("UDP BIB no null");
-	}
-	if(!udp_st) {
-		pr_debug("UDP ST null");
-	} else {
-		pr_debug("UDP ST no null");
-	}
+	udp_bib = kmalloc(sizeof(struct nat64_bib *), GFP_KERNEL);
+	udp_bib->head = NULL;
+
+	udp_st = kmalloc(sizeof(struct nat64_st *), GFP_KERNEL);
+	
+	/* END ST & BIB */
 	
 	if (l3proto_ip == NULL)
 		pr_debug("NAT64: couldn't load IPv4 l3proto");
