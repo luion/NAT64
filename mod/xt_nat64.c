@@ -307,10 +307,10 @@ static bool nat64_get_tuple(u_int8_t l3protocol, u_int8_t l4protocol,
 	int l3_hdrlen, ret;
 	unsigned int protoff = 0;
 	u_int8_t protonum = 0;
-	int buff_cont;
+/*	int buff_cont;
 	unsigned char *buf;
 	unsigned char cc;
-
+*/
 	pr_debug("NAT64: Getting the protocol and header length");
 
 	/*
@@ -339,12 +339,12 @@ static bool nat64_get_tuple(u_int8_t l3protocol, u_int8_t l4protocol,
 
 	pr_debug("NAT64: l3_hdrlen = %d", l3_hdrlen);
 
-	buf = skb->data;
+/*	buf = skb->data;
 	for (buff_cont = 0; buff_cont < skb->len; buff_cont++) {
 		cc = buf[buff_cont];
 		printk(KERN_DEBUG "%02x",cc);
 	}
-
+*/
 	pr_debug("BASIC SKB [head %ld] [data %ld] [tail %d] [end %d] | [len %d]", skb->head - skb->head, skb->data - skb->head, skb->tail, skb->end, skb->len);
 
 	ret = l3proto->get_l4proto(skb, skb_network_offset(skb), 
