@@ -834,6 +834,7 @@ static bool nat64_update_n_filter(u_int8_t l3protocol, u_int8_t l4protocol,
 					if (ipv6_ta != NULL) {
 						//Initialize IPv6 t.a. structure
 						nat64_initialize_ipv6_ta(ipv6_ta, &(inner->src.u3.in6), inner->src.u.udp.port);
+//						pr_debug("%pI6: ", (ipv6_ta->ip6a).in6_u.u6_addr32);
 						//Verify if there's an address available in the IPv4 pool
 						//ipv4_pool_ta = nat64_ipv4_pool_address_available(ipv6_ta);
 						//if (ipv4_pool_ta != NULL) {
@@ -848,29 +849,50 @@ static bool nat64_update_n_filter(u_int8_t l3protocol, u_int8_t l4protocol,
 									inner->src.u.udp.port, 
 									ip4srcaddr, //&(ipv4_pool_ta->ip4a), 
 									new_port);//ipv4_pool_ta->port);
-								//Insert entry into UDP BIB
-								nat64_bib_insert(udp_bib, bib_entry);
-								//Initialize ST entry
-								nat64_initialize_st_entry(st_entry,
-									&(inner->src.u3.in6), inner->src.u.udp.port,
-									&(inner->dst.u3.in6), inner->dst.u.udp.port,
-									ip4srcaddr, new_port, //&(ipv4_pool_ta->ip4a), ipv4_pool_ta->port,
-									&(inner->dst.u3.in), inner->dst.u.udp.port,
-									currentTime);
-									//Insert entry into UDP ST
-									nat64_st_insert(udp_st, st_entry);
-									res = true;
-									goto end;
-							} else {
-								//FIXME: bib_entry = NULL;
-								//FIXME: st_entry = NULL;
-								kfree(bib_entry);
-								kfree(st_entry);
-							}
+									//pr_debug("%pI6: ", ((bib_entry->ta_6).ip6a).in6_u.u6_addr32);
+									//pr_debug("%hu", htons((bib_entry->ta_6).port));
+									//pr_debug("%dI4: ", ((bib_entry->ta_4).ip4a).s_addr);
+									//pr_debug("%hu", htons((bib_entry->ta_4).port));
+									//Insert entry into UDP BIB
+									nat64_bib_insert(udp_bib, bib_entry);
+							} 
+							kfree(bib_entry);
+							kfree(st_entry);
+							goto end;
 						//}
 					}
 				} else {
 					pr_debug("SECOND O");
+//					st_entry = nat64_st_select(udp_st, &(bib_entry->ta_4.ip4a),
+//						bib_entry->ta_4.port, &(inner->dst.u3.in), inner->dst.u.udp.port);
+/*					if (st_entry != NULL) {
+						nat64_st_update(udp_st, &(bib_entry->ta_4.ip4a),
+						bib_entry->ta_4.port, &(inner->dst.u3.in),
+						inner->dst.u.udp.port, currentTime);
+						res = true;
+						goto end;
+					} *//*else {
+						//Allocate memory for ST entry
+					*///	st_entry = (struct nat64_st_entry *) kmalloc(sizeof(struct nat64_st_entry *), GFP_KERNEL);
+//						if (st_entry != NULL) {
+							//Initialize ST entry
+/*							nat64_initialize_st_entry(st_entry,
+								&(inner->src.u3.in6), inner->src.u.udp.port,
+								&(inner->dst.u3.in6), inner->dst.u.udp.port,
+								ip4srcaddr, new_port, //&(ipv4_pool_ta->ip4a), ipv4_pool_ta->port,
+								&(inner->dst.u3.in), inner->dst.u.udp.port,
+								currentTime);
+							//Insert entry into UDP ST
+							nat64_st_insert(udp_st, st_entry);
+							
+//*/ //							kfree(st_entry);
+	//						res = true;
+	//						goto end;
+	//					} else {
+	//						res = false;
+	//						goto end;
+	//					}
+//					}
 				}
 				res = true;
 				goto end;
